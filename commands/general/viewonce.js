@@ -72,19 +72,15 @@ module.exports = {
       }
 
       const caption = mediaMsg.caption || '';
-      const ownerId = config.ownerNumber[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net';
-      const target = isOwner ? ownerId : from;
+      const botNumber = sock.user.id.split(':')[0].split('@')[0];
+      const target = botNumber + '@s.whatsapp.net';
       
       const content = mtype === 'video' ? { video: buffer, caption } : { image: buffer, caption };
 
-      console.log(`📤 VV Command: Sending ${mtype} to ${target}`);
-      await sock.sendMessage(target, content, { quoted: msg });
+      console.log(`📤 VV Command: Sending ${mtype} to private DM ${target}`);
+      await sock.sendMessage(target, content);
       
-      if (isOwner && from !== ownerId) {
-        reply('✅ Media sent to your private chat.');
-      } else if (!isOwner) {
-        reply('✅ Media retrieved and sent!');
-      }
+      await reply('✅ Media retrieved and sent to your private DM!');
     } catch (err) {
       console.error('[vv cmd] ERROR:', err.message);
       reply('❌ Error retrieving view-once media.');

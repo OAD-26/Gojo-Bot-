@@ -1,22 +1,23 @@
 const axios = require('axios');
-const config = require('../../config');
 
 module.exports = {
   name: 'explain',
   category: 'education',
-  description: 'Give a clear and simple explanation of the topic.',
+  description: 'Explain a topic clearly with examples like an AI tutor.',
   usage: '.explain <topic>',
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
-    if (!args.length) return reply('⚠️ Please provide a topic to explain.');
+    if (!args.length) return reply('⚠️ What topic shall we expand upon today?');
+    
     const topic = args.join(' ');
     try {
-      const prompt = `Explain the following topic in a clear and simple way for a student: ${topic}. Format with Gojo style emojis.`;
-      // Placeholder for AI integration - using a public free API or similar logic
-      // In a real scenario, this would call OpenAI/Gemini
+      // Tutor Persona Prompting
+      const prompt = `Act as an AI Tutor. Explain "${topic}" clearly. Include: 1. Clear explanation, 2. Key Points, 3. A helpful example. Use simple language.`;
       const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const text = response.data.success || `✨ *Explanation for ${topic}:*\n\n(AI service is warming up, please try again in a moment! ♾️)`;
-      reply(text);
+      const aiText = response.data.success || "Knowledge is infinite, but my connection is currently limited.";
+      
+      const finalMsg = `📘 *Topic: ${topic}*\n\n${aiText}\n\n*- Gojo Academy* ♾️`;
+      reply(finalMsg);
     } catch (err) {
       reply('❌ Error generating explanation.');
     }
