@@ -1,35 +1,30 @@
 /**
- * AI Chat Command - ChatGPT-style responses
+ * AI Chat Command - Powered by OpenAI GPT
  */
 
-const APIs = require('../../utils/api');
+const { askAI } = require('../../utils/openai');
 
 module.exports = {
   name: 'ai',
-  aliases: ['gpt', 'chatgpt', 'ask'],
+  aliases: ['gpt', 'chatgpt'],
   category: 'ai',
-  description: 'Chat with AI (ChatGPT-style) to get answers to any question',
+  description: 'Chat with AI (powered by OpenAI GPT)',
   usage: '.ai <question>',
-  permission: "Everyone",
-  location: "Group & Private Chat",
+  permission: 'Everyone',
+  location: 'Group & Private Chat',
   cooldown: 5,
   
-  async execute(sock, msg, args, extra) {
+  async execute(sock, msg, args, { reply }) {
+    if (!args.length) return reply('❌ Usage: .ai <question>\n\nExample: .ai What is photosynthesis?');
+    
+    const question = args.join(' ');
+    reply('🧿 *Consulting the Six Eyes...* ♾️');
+    
     try {
-      if (args.length === 0) {
-        return extra.reply('❌ Usage: .ai <question>\n\nExample: .ai What is the capital of France?');
-      }
-      
-      const question = args.join(' ');
-      
-      const response = await APIs.chatAI(question);
-      
-      // Send only the answer without labels
-      const answer = response.response || response.msg || response.data?.msg || response;
-      await extra.reply(answer);
-      
+      const answer = await askAI(question);
+      await reply(answer);
     } catch (error) {
-      await extra.reply(`❌ AI Error: ${error.message}`);
+      await reply(`❌ AI Error: ${error.message}`);
     }
   }
 };

@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { educate } = require('../../utils/openai');
 
 module.exports = {
   name: 'research',
@@ -7,18 +7,14 @@ module.exports = {
   usage: '.research <topic>',
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
-    if (!args.length) return reply('⚠️ Research topic?');
-    
+    if (!args.length) return reply('⚠️ Research on which topic?');
     const topic = args.join(' ');
+    reply('🔬 *Researching...* ♾️');
     try {
-      const prompt = `Provide structured research information on: "${topic}". Include background, current findings, and significance.`;
-      const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const aiText = response.data.success || "Digging deep into the archives...";
-      
-      const finalMsg = `🔬 *Research Findings: ${topic}*\n\n${aiText}\n\n*- Deeper understanding* ♾️`;
-      reply(finalMsg);
-    } catch (err) {
-      reply('❌ Error conducting research.');
+      const result = await educate('research', topic);
+      reply(`🔬 *Research: ${topic}*\n\n${result}`);
+    } catch (e) {
+      reply('❌ AI error: ' + e.message);
     }
   }
 };

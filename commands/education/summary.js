@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { educate } = require('../../utils/openai');
 
 module.exports = {
   name: 'summary',
@@ -7,18 +7,14 @@ module.exports = {
   usage: '.summary <topic>',
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
-    if (!args.length) return reply('⚠️ Provide a topic to summarize.');
-    
+    if (!args.length) return reply('⚠️ Summarize which topic?');
     const topic = args.join(' ');
+    reply('📋 *Summarizing...* ♾️');
     try {
-      const prompt = `Act as a teacher. Provide a clear, concise summary of: "${topic}".`;
-      const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const aiText = response.data.success || "Summarizing... please wait.";
-      
-      const finalMsg = `📋 *Summary: ${topic}*\n\n${aiText}\n\n*- Captured in the Void* ♾️`;
-      reply(finalMsg);
-    } catch (err) {
-      reply('❌ Error summarizing.');
+      const result = await educate('summary', topic);
+      reply(`📋 *Summary: ${topic}*\n\n${result}`);
+    } catch (e) {
+      reply('❌ AI error: ' + e.message);
     }
   }
 };

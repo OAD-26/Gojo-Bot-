@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { educate } = require('../../utils/openai');
 
 module.exports = {
   name: 'shortnote',
@@ -8,17 +8,13 @@ module.exports = {
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
     if (!args.length) return reply('⚠️ Which topic needs revision notes?');
-    
     const topic = args.join(' ');
+    reply('📝 *Generating revision notes...* ♾️');
     try {
-      const prompt = `Act as a tutor. Provide quick, structured revision notes for the topic: "${topic}". Use bullet points.`;
-      const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const aiText = response.data.success || "Condensing the infinite knowledge... wait.";
-      
-      const finalMsg = `📝 *Quick Revision Notes: ${topic}*\n\n${aiText}\n\n*- Study efficient* ♾️`;
-      reply(finalMsg);
-    } catch (err) {
-      reply('❌ Error generating notes.');
+      const result = await educate('shortnote', topic);
+      reply(`📝 *Quick Notes: ${topic}*\n\n${result}`);
+    } catch (e) {
+      reply('❌ AI error: ' + e.message);
     }
   }
 };

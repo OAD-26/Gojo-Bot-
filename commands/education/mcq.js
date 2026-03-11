@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { educate } = require('../../utils/openai');
 
 module.exports = {
   name: 'mcq',
@@ -7,18 +7,14 @@ module.exports = {
   usage: '.mcq <topic>',
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
-    if (!args.length) return reply('⚠️ MCQs for which topic?');
-    
+    if (!args.length) return reply('⚠️ MCQ on which topic?');
     const topic = args.join(' ');
+    reply('🔘 *Creating MCQs...* ♾️');
     try {
-      const prompt = `Generate 3 Multiple Choice Questions on "${topic}" with options A, B, C, D and the correct answer.`;
-      const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const aiText = response.data.success || "Calculating options...";
-      
-      const finalMsg = `🔘 *MCQ Challenge: ${topic}*\n\n${aiText}\n\n*- Pick the right path* ♾️`;
-      reply(finalMsg);
-    } catch (err) {
-      reply('❌ Error generating MCQs.');
+      const result = await educate('mcq', topic);
+      reply(`🔘 *MCQ: ${topic}*\n\n${result}`);
+    } catch (e) {
+      reply('❌ AI error: ' + e.message);
     }
   }
 };

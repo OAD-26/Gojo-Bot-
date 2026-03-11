@@ -1,24 +1,20 @@
-const axios = require('axios');
+const { educate } = require('../../utils/openai');
 
 module.exports = {
   name: 'homework',
   category: 'education',
-  description: 'Help students solve homework with explanation.',
+  description: 'Help solve homework problems step-by-step.',
   usage: '.homework <question>',
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
-    if (!args.length) return reply('⚠️ Show me your homework question.');
-    
+    if (!args.length) return reply('⚠️ What is your homework question?');
     const question = args.join(' ');
+    reply('📚 *Solving your homework...* ♾️');
     try {
-      const prompt = `Act as an AI homework helper. Help solve this question with a clear educational explanation: "${question}".`;
-      const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const aiText = response.data.success || "Focus... the solution is near.";
-      
-      const finalMsg = `📚 *Homework Helper*\n\n${aiText}\n\n*- Keep studying!* ♾️`;
-      reply(finalMsg);
-    } catch (err) {
-      reply('❌ Error assisting with homework.');
+      const result = await educate('homework', question);
+      reply(`📚 *Homework Solution*\n\n${result}`);
+    } catch (e) {
+      reply('❌ AI error: ' + e.message);
     }
   }
 };

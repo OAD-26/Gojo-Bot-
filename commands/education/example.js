@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { educate } = require('../../utils/openai');
 
 module.exports = {
   name: 'example',
@@ -8,17 +8,12 @@ module.exports = {
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
     if (!args.length) return reply('⚠️ Examples for which topic?');
-    
     const topic = args.join(' ');
     try {
-      const prompt = `Provide 3 clear examples to help understand the topic: "${topic}".`;
-      const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const aiText = response.data.success || "Examples are the bridge to understanding.";
-      
-      const finalMsg = `💡 *Examples for: ${topic}*\n\n${aiText}\n\n*- Real world applications* ♾️`;
-      reply(finalMsg);
-    } catch (err) {
-      reply('❌ Error generating examples.');
+      const result = await educate('example', topic);
+      reply(`💡 *Examples: ${topic}*\n\n${result}`);
+    } catch (e) {
+      reply('❌ AI error: ' + e.message);
     }
   }
 };

@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { educate } = require('../../utils/openai');
 
 module.exports = {
   name: 'essay',
@@ -7,18 +7,14 @@ module.exports = {
   usage: '.essay <topic>',
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
-    if (!args.length) return reply('⚠️ What should the essay be about?');
-    
+    if (!args.length) return reply('⚠️ Essay on which topic?');
     const topic = args.join(' ');
+    reply('✍️ *Writing your essay...* ♾️');
     try {
-      const prompt = `Write a short, structured educational essay on: "${topic}". Include introduction, body, and conclusion.`;
-      const response = await axios.get(`https://api.simsimi.net/v2/?text=${encodeURIComponent(prompt)}&lc=en`);
-      const aiText = response.data.success || "Writing... the flow of knowledge.";
-      
-      const finalMsg = `✍️ *Structured Essay: ${topic}*\n\n${aiText}\n\n*- The written word* ♾️`;
-      reply(finalMsg);
-    } catch (err) {
-      reply('❌ Error writing essay.');
+      const result = await educate('essay', topic);
+      reply(`✍️ *Essay: ${topic}*\n\n${result}`);
+    } catch (e) {
+      reply('❌ AI error: ' + e.message);
     }
   }
 };
