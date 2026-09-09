@@ -1,1 +1,9 @@
-{"global": false, "mode": "all", "emojiPool": ["🔥", "🌋", "💀"], "probability": 100, "enabledChats": []}
+{
+  "global": true,
+  "mode": "bot",
+  "emojiPool": [
+    "⏳"
+  ],
+  "probability": 100,
+  "enabledChats": []
+}

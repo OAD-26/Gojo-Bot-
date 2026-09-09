@@ -6,32 +6,92 @@ const path = require('path');
 const config = require('./config');
 const handler = require('./handler');
 
-async function startBot() {
+const sessionPath = path.join(__dirname, 'session');
+const reconnectDelayMs = 5000;
+let reconnectTimer = null;
+let reconnectInProgress = false;
+let connectionGeneration = 0;
+
+function getDisconnectStatus(error) {
+  return error?.output?.statusCode || error?.statusCode || error?.data?.statusCode;
+}
+
+function getErrorText(error) {
+  return [error?.message, error?.output?.payload?.message, error?.data?.message]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function isCorruptSession(error, status) {
+  const errorText = getErrorText(error);
+  return status === DisconnectReason.badSession ||
+    errorText.includes('bad mac') ||
+    errorText.includes('bad session') ||
+    errorText.includes('session error');
+}
+
+function clearSession(reason) {
   try {
-    const sessionPath = path.join(__dirname, 'session');
+    if (fs.existsSync(sessionPath)) {
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      console.log(`🧹 WhatsApp session cleared (${reason}). A new QR scan is required.`);
+    }
+    fs.mkdirSync(sessionPath, { recursive: true });
+  } catch (error) {
+    console.error('❌ Could not clear WhatsApp session:', error.message);
+  }
+}
+
+function scheduleReconnect(reason) {
+  if (reconnectTimer || reconnectInProgress) return;
+
+  console.log(`🔁 Reconnecting WhatsApp in ${reconnectDelayMs / 1000}s (${reason})...`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    startBot().catch(error => {
+      console.error('Reconnect failed:', error.message);
+      scheduleReconnect('retry after startup failure');
+    });
+  }, reconnectDelayMs);
+}
+
+async function startBot() {
+  if (reconnectInProgress) return;
+  reconnectInProgress = true;
+  const currentGeneration = ++connectionGeneration;
+
+  try {
     if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath, { recursive: true });
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
     const { version } = await fetchLatestBaileysVersion();
-    
+
     const sock = makeWASocket({
       version,
-      logger: pino({ level: 'silent' }),
+      logger: pino({ level: process.env.BAILEYS_LOG_LEVEL || 'silent' }),
       browser: Browsers.macOS('Desktop'),
       auth: state,
       printQRInTerminal: false,
       syncFullHistory: false,
-      downloadHistory: false
+      downloadHistory: false,
+      markOnlineOnConnect: false,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000
     });
 
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', async (update) => {
+      if (currentGeneration !== connectionGeneration) return;
+
       const { connection, lastDisconnect, qr } = update;
       if (qr) {
         console.log('📲 Scan the QR code to connect WhatsApp');
         qrcode.generate(qr, { small: true });
       }
       if (connection === 'open') {
+        reconnectInProgress = false;
         console.log('✅ WhatsApp Connected');
         console.log('🔥 GOJO IS ONLINE');
         
@@ -60,27 +120,44 @@ async function startBot() {
         }
       }
       if (connection === 'close') {
-        const reason = lastDisconnect?.error?.output?.statusCode;
+        reconnectInProgress = false;
+        const disconnectError = lastDisconnect?.error;
+        const reason = getDisconnectStatus(disconnectError);
+        const errorText = getErrorText(disconnectError);
+        const shouldClearSession = reason === DisconnectReason.loggedOut ||
+          isCorruptSession(disconnectError, reason);
         const shouldReconnect = reason !== DisconnectReason.loggedOut;
-        console.log(`📡 Connection closed due to ${reason}. Reconnecting: ${shouldReconnect}`);
-        
-        if (reason === DisconnectReason.loggedOut) {
-          console.log('⚠ Session logged out, deleting session folder...');
-          if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-          }
+
+        console.log(`📡 Connection closed due to ${reason || errorText || 'unknown reason'}. Reconnecting: ${shouldReconnect}`);
+
+        if (shouldClearSession) {
+          clearSession(reason === DisconnectReason.loggedOut ? 'logged out' : 'corrupted Signal session');
         }
-        
-        if (shouldReconnect) startBot();
+
+        if (shouldReconnect) scheduleReconnect(errorText || String(reason || 'connection closed'));
       }
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-      if (type === 'notify') handler.handleMessage(sock, messages[0]).catch(e => console.error(e));
+      if (currentGeneration !== connectionGeneration || type !== 'notify') return;
+
+      for (const message of messages) {
+        try {
+          await handler.handleMessage(sock, message);
+        } catch (error) {
+          console.error('Message handling error:', error.message);
+        }
+      }
     });
-  } catch (e) { 
-    console.error('Bot Error:', e); 
-    setTimeout(startBot, 10000); 
+    reconnectInProgress = false;
+  } catch (error) {
+    reconnectInProgress = false;
+    console.error('Bot startup error:', error);
+    scheduleReconnect('startup error');
   }
 }
-startBot();
+
+startBot().catch(error => {
+  console.error('Fatal bot startup error:', error);
+  scheduleReconnect('fatal startup error');
+});
