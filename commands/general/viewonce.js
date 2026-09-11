@@ -1,89 +1,174 @@
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const config = require('../../config');
 
+const VIEW_ONCE_WRAPPERS = [
+  'viewOnceMessageV2',
+  'viewOnceMessageV2Extension',
+  'viewOnceMessage',
+  'ephemeralMessage'
+];
+
+function unwrapViewOnceMessage(message) {
+  let current = message;
+  let foundViewOnce = false;
+
+  while (current && typeof current === 'object') {
+    const mediaType = ['imageMessage', 'videoMessage', 'audioMessage']
+      .find(type => current[type]);
+
+    if (mediaType) {
+      const media = current[mediaType];
+      if (foundViewOnce || media.viewOnce === true) {
+        return {
+          media,
+          mediaType: mediaType.replace('Message', ''),
+          label: mediaType.replace('Message', '')
+        };
+      }
+      return null;
+    }
+
+    const wrapperType = VIEW_ONCE_WRAPPERS.find(type => current[type]?.message);
+    if (!wrapperType) return null;
+
+    if (wrapperType.startsWith('viewOnce')) foundViewOnce = true;
+    current = current[wrapperType].message;
+  }
+
+  return null;
+}
+
+function getReplyContextInfo(message) {
+  const messageBody = message?.message || {};
+  const possibleMessages = [
+    messageBody.extendedTextMessage,
+    messageBody.imageMessage,
+    messageBody.videoMessage,
+    messageBody.audioMessage,
+    messageBody.buttonsResponseMessage,
+    messageBody.listResponseMessage,
+    messageBody.templateButtonReplyMessage
+  ];
+
+  return possibleMessages.find(candidate => candidate?.contextInfo?.quotedMessage)?.contextInfo || {};
+}
+
+function getBotPrivateJid(sock) {
+  const connectedId = sock.user?.id || sock.user?.jid || '';
+  const phoneNumber = connectedId.split('@')[0].split(':')[0].replace(/\D/g, '');
+  return phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null;
+}
+
+function formatTimestamp() {
+  try {
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: config.timezone || 'Africa/Lagos'
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
+async function getSourceChatName(sock, from, isGroup) {
+  if (!isGroup) return 'Private chat';
+
+  try {
+    const metadata = await sock.groupMetadata(from);
+    return metadata.subject || 'WhatsApp group';
+  } catch {
+    return 'WhatsApp group';
+  }
+}
+
 module.exports = {
   name: 'vv',
-  aliases: ['viewonce', 'retrive'],
+  aliases: ['viewonce', 'retrieve', 'retrive'],
   category: 'general',
-  description: 'Retrieve view-once images or videos and send them to you',
-  usage: '.vv (reply to view-once)',
-  permission: "Everyone",
-  location: "Group & Private Chat",
+  description: 'Send replied view-once images, videos, or voice notes to the bot private chat with source details',
+  usage: '.vv (reply to a view-once image, video, or voice note)',
+  permission: 'Everyone',
+  location: 'Group & Private Chat',
   cooldown: 5,
 
-  async execute(sock, msg, args, { from, sender, isOwner, reply, quoted }) {
+  async execute(sock, msg, args, { from, sender, isGroup, reply, quoted }) {
     try {
-      if (msg.key.fromMe) return;
-
-      console.log('🔎 VV Command: Starting...');
-      
       if (!quoted) {
-        console.log('❌ VV Command: No quoted message found');
-        return reply('⚠️ Please reply to a view-once image or video.');
+        return reply('⚠️ Please reply to a view-once image, video, or voice note.');
       }
 
-      console.log('📋 VV Command: Quoted structure:', Object.keys(quoted));
-
-      // Try multiple paths to find the media
-      let mediaMsg = null;
-      let mtype = null;
-
-      // Path 1: viewOnceMessageV2/V2Extension with .message
-      if (quoted.viewOnceMessageV2?.message?.imageMessage) {
-        mediaMsg = quoted.viewOnceMessageV2.message.imageMessage;
-        mtype = 'image';
-      } else if (quoted.viewOnceMessageV2?.message?.videoMessage) {
-        mediaMsg = quoted.viewOnceMessageV2.message.videoMessage;
-        mtype = 'video';
-      } else if (quoted.viewOnceMessageV2Extension?.message?.imageMessage) {
-        mediaMsg = quoted.viewOnceMessageV2Extension.message.imageMessage;
-        mtype = 'image';
-      } else if (quoted.viewOnceMessageV2Extension?.message?.videoMessage) {
-        mediaMsg = quoted.viewOnceMessageV2Extension.message.videoMessage;
-        mtype = 'video';
-      }
-      // Path 2: viewOnceMessage
-      else if (quoted.viewOnceMessage?.message?.imageMessage) {
-        mediaMsg = quoted.viewOnceMessage.message.imageMessage;
-        mtype = 'image';
-      } else if (quoted.viewOnceMessage?.message?.videoMessage) {
-        mediaMsg = quoted.viewOnceMessage.message.videoMessage;
-        mtype = 'video';
-      }
-      // Path 3: Direct imageMessage/videoMessage with viewOnce flag
-      else if (quoted.imageMessage?.viewOnce) {
-        mediaMsg = quoted.imageMessage;
-        mtype = 'image';
-      } else if (quoted.videoMessage?.viewOnce) {
-        mediaMsg = quoted.videoMessage;
-        mtype = 'video';
+      const extracted = unwrapViewOnceMessage(quoted);
+      if (!extracted) {
+        return reply('⚠️ The replied message is not a supported view-once image, video, or voice note.');
       }
 
-      if (!mediaMsg || !mtype) {
-        console.log('❌ VV Command: Not a view-once media');
-        return reply('⚠️ Please reply to a view-once image or video.');
+      const { media, mediaType } = extracted;
+      const privateJid = getBotPrivateJid(sock);
+      if (!privateJid) {
+        return reply('❌ I could not identify my private WhatsApp chat. Please reconnect the bot and try again.');
       }
 
-      console.log(`⬇️ VV Command: Downloading ${mtype}...`);
-      const stream = await downloadContentFromMessage(mediaMsg, mtype);
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
+      const replyContext = getReplyContextInfo(msg);
+      const sourceSender = replyContext.participant || sender || 'Unknown sender';
+      const sourceChatName = await getSourceChatName(sock, from, isGroup);
+      const sourceType = mediaType === 'audio' && media.ptt !== false
+        ? 'Voice note'
+        : mediaType.charAt(0).toUpperCase() + mediaType.slice(1);
+      const originalCaption = media.caption?.trim();
+
+      const details = [
+        '🛡️ *VIEW-ONCE MEDIA SHARED*',
+        '',
+        `📦 *Type:* ${sourceType}`,
+        `💬 *Source chat:* ${sourceChatName}`,
+        `🆔 *Chat ID:* ${from}`,
+        `👤 *Sent by:* ${sourceSender}`,
+        `🕒 *Retrieved:* ${formatTimestamp()}`,
+        originalCaption ? `📝 *Original caption:* ${originalCaption}` : null
+      ].filter(Boolean).join('\n');
+
+      console.log(`⬇️ VV Command: Downloading ${sourceType} from ${from}`);
+      const stream = await downloadContentFromMessage(media, mediaType);
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      const buffer = Buffer.concat(chunks);
+
+      if (!buffer.length) {
+        return reply('❌ The view-once media was empty or could not be downloaded.');
       }
 
-      const caption = mediaMsg.caption || '';
-      const botNumber = sock.user.id.split(':')[0].split('@')[0];
-      const target = botNumber + '@s.whatsapp.net';
-      
-      const content = mtype === 'video' ? { video: buffer, caption } : { image: buffer, caption };
+      console.log(`📤 VV Command: Sending ${sourceType} and source details to ${privateJid}`);
+      await sock.sendMessage(privateJid, { text: details });
 
-      console.log(`📤 VV Command: Sending ${mtype} to private DM ${target}`);
-      await sock.sendMessage(target, content);
-      
-      await reply('✅ Media retrieved and sent to your private DM!');
-    } catch (err) {
-      console.error('[vv cmd] ERROR:', err.message);
-      reply('❌ Error retrieving view-once media.');
+      if (mediaType === 'audio') {
+        await sock.sendMessage(privateJid, {
+          audio: buffer,
+          mimetype: media.mimetype || 'audio/ogg; codecs=opus',
+          ptt: media.ptt !== false
+        });
+      } else if (mediaType === 'video') {
+        await sock.sendMessage(privateJid, {
+          video: buffer,
+          mimetype: media.mimetype || 'video/mp4',
+          caption: originalCaption || `📦 ${sourceType} from ${sourceChatName}`
+        });
+      } else {
+        await sock.sendMessage(privateJid, {
+          image: buffer,
+          mimetype: media.mimetype || 'image/jpeg',
+          caption: originalCaption || `📦 ${sourceType} from ${sourceChatName}`
+        });
+      }
+
+      await sock.sendMessage(privateJid, {
+        text: `✅ *Successfully shared.*\n\nThe ${sourceType.toLowerCase()} from *${sourceChatName}* was delivered to this private chat.`
+      });
+
+      await reply(`✅ ${sourceType} retrieved and successfully shared to my private chat with the source-chat details.`);
+    } catch (error) {
+      console.error('[vv cmd] ERROR:', error);
+      await reply(`❌ I could not share that view-once media: ${error.message || 'download or delivery failed.'}`);
     }
   }
 };
