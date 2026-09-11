@@ -41,7 +41,7 @@ module.exports = {
   aliases: ['ig', 'insta', 'igdl', 'reels'],
   category: 'media',
   description: 'Download Instagram photos/videos/reels',
-  usage: '<Instagram URL>',
+  usage: '.instagram <Instagram URL>',
   
   async execute(sock, msg, args, extra) {
     try {

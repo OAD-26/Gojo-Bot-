@@ -1,102 +1,86 @@
 /**
- * Video Downloader - Download video from YouTube
+ * Video Downloader - Download video from YouTube.
  */
 
-const yts = require('yt-search');
-const APIs = require('../../utils/api');
 const config = require('../../config');
+const APIs = require('../../utils/api');
+const {
+  resolveYouTubeVideo,
+  pickDownloadUrl,
+  getDownloadTitle,
+  cleanFilename,
+  downloadBuffer
+} = require('../../utils/media');
 
 module.exports = {
   name: 'ytvideo',
   aliases: ['ytv', 'ytmp4', 'ytvid', 'video'],
   category: 'media',
-  description: 'Download video from YouTube',
-  usage: '.video <video name or URL>',
+  description: 'Download a video from YouTube',
+  usage: '.video <video name or YouTube link>',
 
-  async execute(sock, msg, args) {
+  async execute(sock, msg, args, extra) {
+    const query = args.join(' ').trim();
+    const chatId = extra.from;
+
+    if (!query) {
+      return extra.reply(`🎬 Usage: ${config.prefix}video <video name or YouTube link>`);
+    }
+
     try {
-      // Get instance-specific config
-      const instanceConfig = config.getConfigFromSocket(sock);
+      const video = await resolveYouTubeVideo(query);
+      await extra.reply(`🎬 Downloading *${video.title}*${video.timestamp ? ` (${video.timestamp})` : ''}...`);
 
-      const text = args.join(' ');
-      const chatId = msg.key.remoteJid;
+      const providers = [
+        ['EliteProTech', () => APIs.getEliteProTechVideoByUrl(video.url)],
+        ['Yupra', () => APIs.getYupraVideoByUrl(video.url)],
+        ['Okatsu', () => APIs.getOkatsuVideoByUrl(video.url)]
+      ];
 
-      const searchQuery = text.trim();
-
-      if (!searchQuery) {
-        return await sock.sendMessage(chatId, {
-          text: 'What video do you want to download?'
-        }, { quoted: msg });
-      }
-
-      // Determine if input is a YouTube link
-      let videoUrl = '';
-      let videoTitle = '';
-      let videoThumbnail = '';
-
-      if (searchQuery.startsWith('http://') || searchQuery.startsWith('https://')) {
-        videoUrl = searchQuery;
-      } else {
-        // Search YouTube for the video
-        const { videos } = await yts(searchQuery);
-        if (!videos || videos.length === 0) {
-          return await sock.sendMessage(chatId, {
-            text: 'No videos found!'
-          }, { quoted: msg });
-        }
-        videoUrl = videos[0].url;
-        videoTitle = videos[0].title;
-        videoThumbnail = videos[0].thumbnail;
-      }
-
-      // Send thumbnail immediately
-      try {
-        const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
-        const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : undefined);
-        const captionTitle = videoTitle || searchQuery;
-        if (thumb) {
-          await sock.sendMessage(chatId, {
-            image: { url: thumb },
-            caption: `*${captionTitle}*\nDownloading...`
-          }, { quoted: msg });
-        }
-      } catch (e) {
-        console.error('[VIDEO] thumb error:', e?.message || e);
-      }
-
-      // Validate YouTube URL
-      let urls = videoUrl.match(/(?:https?:\/\/)?(?:youtu\.be\/|(?:www\.|m\.)?youtube\.com\/(?:watch\?v=|v\/|embed\/|shorts\/|playlist\?list=)?)([a-zA-Z0-9_-]{11})/gi);
-      if (!urls) {
-        return await sock.sendMessage(chatId, {
-          text: 'This is not a valid YouTube link!'
-        }, { quoted: msg });
-      }
-
-      // Get video: try EliteProTech first, then Yupra, then Okatsu fallback
       let videoData;
-      try {
-        videoData = await APIs.getEliteProTechVideoByUrl(videoUrl);
-      } catch (e1) {
+      let downloadUrl;
+      let lastError;
+
+      for (const [provider, getVideo] of providers) {
         try {
-          videoData = await APIs.getYupraVideoByUrl(videoUrl);
-        } catch (e2) {
-          videoData = await APIs.getOkatsuVideoByUrl(videoUrl);
+          const data = await getVideo();
+          const url = pickDownloadUrl(data);
+          if (!url) throw new Error('no download URL');
+          videoData = data;
+          downloadUrl = url;
+          console.log(`Video download URL obtained through ${provider}`);
+          break;
+        } catch (error) {
+          lastError = error;
+          console.warn(`Video provider ${provider} failed: ${error.message}`);
         }
       }
 
-      // Send video directly using the download URL
-      await sock.sendMessage(chatId, {
-        video: { url: videoData.download },
-        mimetype: 'video/mp4',
-        fileName: `${(videoData.title || videoTitle || 'video').replace(/[^\w\s-]/g, '')}.mp4`,
-        caption: `*${videoData.title || videoTitle || 'Video'}*\n\n> *_Downloaded by ${instanceConfig.botName}_*`
-      }, { quoted: msg });
+      if (!downloadUrl) throw new Error(lastError?.message || 'All video download sources failed.');
 
+      const title = getDownloadTitle(videoData, video.title);
+      const caption = `🎬 *${title}*\n\n> Downloaded by ${config.botName}`;
+
+      try {
+        await sock.sendMessage(chatId, {
+          video: { url: downloadUrl },
+          mimetype: 'video/mp4',
+          fileName: `${cleanFilename(title, 'video')}.mp4`,
+          caption
+        }, { quoted: msg });
+      } catch (urlError) {
+        console.warn('Direct video send failed; retrying with a buffer:', urlError.message);
+        const buffer = await downloadBuffer(downloadUrl, { maxBytes: 100 * 1024 * 1024 });
+        await sock.sendMessage(chatId, {
+          video: buffer,
+          mimetype: 'video/mp4',
+          fileName: `${cleanFilename(title, 'video')}.mp4`,
+          caption
+        }, { quoted: msg });
+      }
     } catch (error) {
-      console.error('[VIDEO] Command Error:', error?.message || error);
-      await sock.sendMessage(msg.key.remoteJid, {
-        text: 'Download failed: ' + (error?.message || 'Unknown error')
-      }, { quoted: msg });
+      console.error('Video command error:', error);
+      await extra.reply(`❌ Could not download that video.\n\n${error.message || 'All download sources failed.'}`);
     }
   }
 };

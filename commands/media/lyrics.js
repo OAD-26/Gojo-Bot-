@@ -1,92 +1,103 @@
 /**
- * Lyrics Finder
+ * Lyrics Finder.
  */
 
 const axios = require('axios');
 const config = require('../../config');
 
+function normalizeLyrics(data) {
+  if (!data) return null;
+  const lyrics = data.plainLyrics || data.lyrics || data.text;
+  if (!lyrics || typeof lyrics !== 'string') return null;
+
+  return {
+    title: data.trackName || data.title || data.name || 'Unknown song',
+    artist: data.artistName || data.artist || 'Unknown artist',
+    lyrics: lyrics.trim(),
+    thumbnail: data.thumbnail || data.image || data.albumArt || null
+  };
+}
+
+async function getFromLrcLib(query) {
+  const response = await axios.get('https://lrclib.net/api/search', {
+    params: { track_name: query },
+    timeout: 15000,
+    headers: { 'User-Agent': 'GOJO-BOT/1.1' }
+  });
+  const result = Array.isArray(response.data)
+    ? response.data.find(item => item.plainLyrics || item.syncedLyrics)
+    : null;
+  if (!result) return null;
+  if (!result.plainLyrics && result.syncedLyrics) {
+    result.plainLyrics = result.syncedLyrics
+      .replace(/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]\s*/g, '\n')
+      .trim();
+  }
+  return normalizeLyrics(result);
+}
+
+async function getFromLegacyProviders(query) {
+  const providers = [
+    async () => {
+      const response = await axios.get('https://api.vreden.my.id/api/lyrics', {
+        params: { query },
+        timeout: 15000
+      });
+      return normalizeLyrics(response.data?.result);
+    },
+    async () => {
+      const response = await axios.get('https://api.siputzx.my.id/api/s/lyrics', {
+        params: { query },
+        timeout: 15000
+      });
+      return normalizeLyrics(response.data?.data);
+    }
+  ];
+
+  for (const provider of providers) {
+    try {
+      const result = await provider();
+      if (result) return result;
+    } catch (error) {
+      console.warn('Lyrics provider failed:', error.message);
+    }
+  }
+  return null;
+}
+
 module.exports = {
   name: 'lyrics',
-  aliases: ['lyric', 'lirik'],
+  aliases: ['lyric', 'lirik', 'songlyrics'],
   category: 'media',
-  description: 'Get lyrics of a song',
-  usage: '<song name>',
-  
-  async execute(sock, msg, args) {
+  description: 'Find lyrics for a song',
+  usage: '.lyrics <song name>',
+
+  async execute(sock, msg, args, extra) {
+    const query = args.join(' ').trim();
+    if (!query) {
+      return extra.reply(`📝 Usage: ${config.prefix}lyrics <song name>\n\nExample: ${config.prefix}lyrics Adele Hello`);
+    }
+
     try {
-      if (args.length === 0) {
-        return await sock.sendMessage(msg.key.remoteJid, { 
-          text: `❌ Please provide a song name!\n\nExample: ${config.prefix}lyrics Despacito` 
-        });
-      }
-      
-      const query = args.join(' ');
-      
-      let lyricsData = null;
-      
-      // API 1: Vreden
-      try {
-        const response = await axios.get(`https://api.vreden.my.id/api/lyrics?query=${encodeURIComponent(query)}`);
-        if (response.data && response.data.result) {
-          lyricsData = {
-            title: response.data.result.title,
-            artist: response.data.result.artist,
-            lyrics: response.data.result.lyrics,
-            thumbnail: response.data.result.thumbnail
-          };
-        }
-      } catch (err) {
-        console.log('Vreden API failed, trying next...');
-      }
-      
-      // API 2: Siputzx (fallback)
-      if (!lyricsData) {
-        try {
-          const response = await axios.get(`https://api.siputzx.my.id/api/s/lyrics?query=${encodeURIComponent(query)}`);
-          if (response.data && response.data.status && response.data.data) {
-            lyricsData = {
-              title: response.data.data.title,
-              artist: response.data.data.artist,
-              lyrics: response.data.data.lyrics,
-              thumbnail: response.data.data.image
-            };
-          }
-        } catch (err) {
-          console.log('Siputzx API failed');
-        }
-      }
-      
-      if (!lyricsData) {
-        return await sock.sendMessage(msg.key.remoteJid, { 
-          text: '❌ Could not find lyrics for this song!' 
-        });
-      }
-      
-      // Format lyrics (limit to prevent message too long)
-      let lyrics = lyricsData.lyrics;
-      if (lyrics.length > 4000) {
-        lyrics = lyrics.substring(0, 4000) + '...\n\n_Lyrics too long, showing first part only_';
-      }
-      
-      const caption = `🎵 *${lyricsData.title}*\n` +
-                     `👤 *Artist:* ${lyricsData.artist}\n\n` +
-                     `📝 *Lyrics:*\n${lyrics}\n\n` +
-                     `_Fetched by ${config.botName}_`;
-      
+      const lyricsData = await getFromLrcLib(query) || await getFromLegacyProviders(query);
+      if (!lyricsData) return extra.reply(`❌ I could not find lyrics for *${query}*.`);
+
+      const lyrics = lyricsData.lyrics.length > 5000
+        ? `${lyricsData.lyrics.slice(0, 5000)}...\n\n_Lyrics truncated to fit WhatsApp._`
+        : lyricsData.lyrics;
+      const caption = `🎵 *${lyricsData.title}*\n👤 *Artist:* ${lyricsData.artist}\n\n📝 *Lyrics:*\n${lyrics}\n\n_Fetched by ${config.botName}_`;
+
       if (lyricsData.thumbnail) {
-        await sock.sendMessage(msg.key.remoteJid, {
+        await sock.sendMessage(extra.from, {
           image: { url: lyricsData.thumbnail },
-          caption: caption
-        });
+          caption
+        }, { quoted: msg });
       } else {
-        await sock.sendMessage(msg.key.remoteJid, { text: caption });
+        await extra.reply(caption);
       }
-      
     } catch (error) {
       console.error('Lyrics command error:', error);
-      await sock.sendMessage(msg.key.remoteJid, { 
-        text: '❌ An error occurred while fetching lyrics!' 
-      });
+      await extra.reply('❌ Lyrics services are unavailable right now. Please try again later.');
     }
   }
 };
