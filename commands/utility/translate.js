@@ -2,11 +2,9 @@
  * Translate Command - Translate text to different languages
  */
 
-const fetch = require('node-fetch');
-
 module.exports = {
   name: 'translate',
-  aliases: ['trt', 'tr'],
+  aliases: ['trt'],
   category: 'utility',
   description: 'Translate text to different languages',
   usage: '.translate <text> <lang> or .translate <lang> (reply to message)',

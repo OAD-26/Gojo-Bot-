@@ -3,11 +3,11 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = {
-  name: 'update',
-  aliases: ['upgrade'],
+  name: 'npmupdate',
+  aliases: ['npminstall', 'packageupdate'],
   category: 'admin',
-  description: 'Update GOJO BOT to the latest version',
-  usage: '.update',
+  description: 'Update installed npm dependencies',
+  usage: '.npmupdate',
   permission: 'Owner',
   location: 'Private Chat',
   cooldown: 30,

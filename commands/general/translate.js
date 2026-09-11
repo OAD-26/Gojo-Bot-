@@ -5,11 +5,11 @@
 const APIs = require('../../utils/api');
 
 module.exports = {
-  name: 'translate',
-  aliases: ['tr', 'trans'],
+  name: 'language',
+  aliases: ['trans', 'tr'],
   category: 'general',
   description: 'Translate text to another language',
-  usage: '.translate <lang code> <text>',
+  usage: '.language <lang code> <text>',
   
   async execute(sock, msg, args, extra) {
     try {

@@ -5,6 +5,8 @@ const db = require('./utils/dbManager');
 const path = require('path');
 const agPath = path.join(__dirname, './database/autogreet.json');
 
+const normalizeNumber = (jid = '') => String(jid).split('@')[0].split(':')[0].replace(/\D/g, '');
+
 let commands;
 try { commands = loadCommands(); } catch (e) { commands = new Map(); }
 
@@ -37,9 +39,9 @@ module.exports = {
       const isGroup = from.endsWith('@g.us');
       
       // Owner = the WhatsApp account the bot is running on
-      const botOwnerNumber = (sock.user?.id || '').replace(/[^0-9]/g, '');
-      const senderNumber = sender.split('@')[0].split(':')[0];
-      const isOwner = botOwnerNumber === senderNumber;
+      const botOwnerNumber = normalizeNumber(sock.user?.id || sock.user?.jid);
+      const senderNumber = normalizeNumber(sender);
+      const isOwner = msg.key.fromMe === true || (botOwnerNumber && botOwnerNumber === senderNumber);
 
       await handleAutoReact(sock, msg, from, body, isGroup, sender).catch(() => {});
       await handleAutoGreet(sock, msg, from, isGroup, sender, isOwner).catch(() => {});
@@ -111,11 +113,54 @@ module.exports = {
       const cmd = commands.get(commandName);
       if (cmd) {
         console.log(`🚀 Executing Command: ${cmd.name} | Quoted: ${quotedMsg ? 'YES' : 'NO'}`);
+
+        let groupMetadata = null;
+        let isAdmin = isOwner;
+        let isBotAdmin = false;
+
+        if (isGroup) {
+          try {
+            groupMetadata = await sock.groupMetadata(from);
+            const participant = groupMetadata.participants?.find(participant =>
+              participant.id === sender ||
+              normalizeNumber(participant.id) === senderNumber
+            );
+            const botParticipant = groupMetadata.participants?.find(participant =>
+              participant.id === sock.user?.id ||
+              normalizeNumber(participant.id) === botOwnerNumber
+            );
+            isAdmin = isOwner || participant?.admin === 'admin' || participant?.admin === 'superadmin';
+            isBotAdmin = botParticipant?.admin === 'admin' || botParticipant?.admin === 'superadmin';
+          } catch (error) {
+            console.error(`Could not load group metadata for ${from}:`, error.message);
+          }
+        }
+
+        const replyWithContext = (text, options = {}) => sock.sendMessage(
+          from,
+          { text, ...(options && typeof options === 'object' ? options : {}) },
+          { quoted: msg }
+        ).catch(e => console.error('Reply error:', e.message));
+
+        if (cmd.ownerOnly && !isOwner) {
+          return replyWithContext('🤞 *Only the Honored One* can use this command.');
+        }
+        if (cmd.groupOnly && !isGroup) {
+          return replyWithContext('🏯 This command can only be used inside a group.');
+        }
+        if (cmd.adminOnly && !isAdmin) {
+          return replyWithContext('🧿 Only group admins can use this command.');
+        }
+        if (cmd.botAdminNeeded && !isBotAdmin) {
+          return replyWithContext('🦾 I need to be a group admin before using this command.');
+        }
+
         const ctx = {
-          from, sender, isOwner, isGroup,
+          from, sender, isOwner, isGroup, isAdmin, isBotAdmin,
+          groupMetadata, prefix: config.prefix,
           quoted: quotedMsg,
-          reply: (t) => sock.sendMessage(from, { text: t }, { quoted: msg }).catch(e => console.error(`Reply error:`, e.message)),
-          react: (e) => sock.sendMessage(from, { react: { text: e, key: msg.key } })
+          reply: replyWithContext,
+          react: (e) => sock.sendMessage(from, { react: { text: e, key: msg.key } }).catch(() => {})
         };
         try {
           await cmd.execute(sock, msg, args, ctx);

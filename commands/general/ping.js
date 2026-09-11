@@ -1,5 +1,6 @@
 module.exports = {
   name: "ping",
+  category: "general",
   description: "Check if the bot is alive and see its response speed",
   usage: ".ping",
   permission: "Everyone",

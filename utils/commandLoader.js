@@ -5,6 +5,21 @@
 const fs = require('fs');
 const path = require('path');
 
+function getAliases(command) {
+  const aliases = [];
+
+  if (Array.isArray(command.aliases)) aliases.push(...command.aliases);
+  if (Array.isArray(command.alias)) aliases.push(...command.alias);
+  else if (typeof command.alias === 'string') aliases.push(command.alias);
+
+  return [...new Set(
+    aliases
+      .filter(Boolean)
+      .map(alias => String(alias).trim().toLowerCase())
+      .filter(alias => alias && alias !== command.name)
+  )];
+}
+
 // Load all commands
 const loadCommands = () => {
   const commands = new Map();
@@ -26,12 +41,26 @@ const loadCommands = () => {
         try {
           const command = require(path.join(categoryPath, file));
           if (command.name) {
-            commands.set(command.name, command);
-            if (command.aliases) {
-              command.aliases.forEach(alias => {
-                commands.set(alias, command);
-              });
+            const commandName = String(command.name).trim().toLowerCase();
+            command.name = commandName;
+            command.aliases = getAliases(command);
+
+            if (commands.has(commandName) && commands.get(commandName) !== command) {
+              console.warn(`Duplicate command name "${commandName}" in ${file}; keeping the first registered command.`);
+              return;
             }
+
+            commands.set(commandName, command);
+            command.aliases.forEach(alias => {
+              if (commands.has(alias)) {
+                const existing = commands.get(alias);
+                if (existing !== command) {
+                  console.warn(`Alias "${alias}" from ${file} conflicts with "${existing.name}"; keeping the first registered command.`);
+                  return;
+                }
+              }
+              commands.set(alias, command);
+            });
           }
         } catch (error) {
           console.error(`Error loading command ${file}:`, error.message);

@@ -1,10 +1,25 @@
 const http = require('http');
 const { fork } = require('child_process');
 const path = require('path');
+const packageInfo = require('./package.json');
+const { loadCommands } = require('./utils/commandLoader');
 
 const PORT = process.env.PORT || 5000;
 
 const server = http.createServer((req, res) => {
+  if (req.url === '/health') {
+    const commands = loadCommands();
+    const commandCount = new Set([...commands.values()].map(command => command.name)).size;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      status: 'ok',
+      version: packageInfo.version,
+      uptimeSeconds: Math.floor(process.uptime()),
+      commandCount,
+      pid: process.pid
+    }));
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/html' });
   res.end(`
     <html>

@@ -1,5 +1,6 @@
 module.exports = {
-    name: 'restart',
+    name: 'ownerrestart',
+    aliases: ['orestart'],
     category: 'owner',
     desc: 'Restart the bot process',
     execute: async (sock, msg, args, { isOwner, reply }) => {

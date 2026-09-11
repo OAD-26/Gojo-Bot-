@@ -1,10 +1,11 @@
 const { askAI } = require('../../utils/openai');
 
 module.exports = {
-  name: 'translate',
+  name: 'translateen',
+  aliases: ['toenglish'],
   category: 'education',
   description: 'Translate text into English.',
-  usage: '.translate <text>',
+  usage: '.translateen <text>',
   permission: 'Everyone',
   async execute(sock, msg, args, { reply }) {
     if (!args.length) return reply('⚠️ Provide text to translate.');

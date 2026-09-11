@@ -3,7 +3,7 @@ const { loadCommands } = require('../../utils/commandLoader');
 
 module.exports = {
     name: 'menu',
-    alias: ['help', 'h'],
+    aliases: ['help', 'h'],
     category: 'general',
     desc: 'Show bot menu',
     execute: async (sock, msg, args, { from, sender, isOwner, reply }) => {

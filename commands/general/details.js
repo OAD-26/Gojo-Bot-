@@ -2,7 +2,8 @@ const { loadCommands } = require('../../utils/commandLoader');
 
 module.exports = {
   name: "details",
-  aliases: ["help", "info"],
+  aliases: ["commandinfo", "cmdinfo"],
+  category: "general",
   description: "View details of a specific command or all commands",
   usage: ".details <command_name> | .details all",
   permission: "Everyone",
@@ -23,7 +24,10 @@ module.exports = {
         const seen = new Set();
         commands.forEach((cmd) => {
           if (!seen.has(cmd.name)) {
-            helpText += `.${cmd.name} → ${cmd.description || cmd.desc || 'No description'}\n`;
+            const aliases = Array.isArray(cmd.aliases) && cmd.aliases.length
+              ? ` (also: ${cmd.aliases.map(alias => `.${alias}`).join(', ')})`
+              : '';
+            helpText += `.${cmd.name} → ${cmd.description || cmd.desc || 'No description'}${aliases}\n`;
             seen.add(cmd.name);
           }
         });
@@ -55,6 +59,12 @@ ${cmd.location || 'Group & Private Chat'}
 
 ⏱ *Cooldown:*
 ${cmd.cooldown || 'None'}
+
+🏷️ *Category:*
+${cmd.category || 'misc'}
+
+🔗 *Aliases:*
+${Array.isArray(cmd.aliases) && cmd.aliases.length ? cmd.aliases.map(alias => `.${alias}`).join(', ') : 'None'}
 
 ⚡ *Powered by Gojo Bot*`;
 
