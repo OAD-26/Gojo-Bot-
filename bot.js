@@ -5,6 +5,11 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const handler = require('./handler');
+const {
+  cacheMessage,
+  handleAntiViewOnce,
+  handleMessageUpdate
+} = require('./utils/messageProtection');
 
 const sessionPath = path.join(__dirname, 'session');
 const reconnectDelayMs = 5000;
@@ -143,9 +148,22 @@ async function startBot() {
 
       for (const message of messages) {
         try {
+          cacheMessage(message);
+          await handleAntiViewOnce(sock, message);
           await handler.handleMessage(sock, message);
         } catch (error) {
           console.error('Message handling error:', error.message);
+        }
+      }
+    });
+
+    sock.ev.on('messages.update', async updates => {
+      if (currentGeneration !== connectionGeneration) return;
+      for (const update of updates) {
+        try {
+          await handleMessageUpdate(sock, update);
+        } catch (error) {
+          console.error('Message update handling error:', error.message);
         }
       }
     });

@@ -58,12 +58,16 @@ const getGroupSettings = (groupId) => {
     groups[groupId] = { ...config.defaultGroupSettings };
     writeDB(GROUPS_DB, groups);
   }
-  return groups[groupId];
+  return { ...config.defaultGroupSettings, ...groups[groupId] };
 };
 
 const updateGroupSettings = (groupId, settings) => {
   const groups = readDB(GROUPS_DB);
-  groups[groupId] = { ...groups[groupId], ...settings };
+  groups[groupId] = {
+    ...config.defaultGroupSettings,
+    ...(groups[groupId] || {}),
+    ...settings
+  };
   return writeDB(GROUPS_DB, groups);
 };
 
